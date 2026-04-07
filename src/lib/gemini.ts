@@ -37,7 +37,8 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
     return;
   }
 
-  let uploadResult: Record<string, unknown> | null = null;
+  // Use inline typing derived exactly from the SDK returns since their File_2 object doesn't expose an interface definition
+  let uploadResult: { name?: string; uri?: string; mimeType?: string; state?: string } | null = null;
 
   try {
     uploadResult = await ai.files.upload({
@@ -95,7 +96,8 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
       }
     `;
 
-    const contents = [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contents: any = [
       {
         role: "user",
         parts: [

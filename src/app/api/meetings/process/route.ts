@@ -78,8 +78,9 @@ export async function POST(request: Request) {
 
           // Try to safely extract Summary and Actions if they completed, or use graceful fallbacks
           type FallbackSummary = { abstract: string; keyPoints: string[]; risks: string[]; blockers: string[] };
+          type ParsedAction = { title: string; owner: string | null; dueDate: string | null; sourceLanguage: string; linkedSegmentIndex?: number };
           let summaryData: FallbackSummary = { abstract: "The transcription stream ended before a complete summary could be finalized.", keyPoints: ["Partial transcript captured"], risks: [], blockers: [] };
-          let actionsData: Record<string, string | number | null>[] = [];
+          let actionsData: ParsedAction[] = [];
           
           try {
             // Attempt a full parse if the stream cleanly finished without hitting token limits
