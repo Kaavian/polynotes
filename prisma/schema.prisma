@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Meeting {
+  id        String   @id @default(uuid())
+  title     String
+  status    String   @default("RECORDING") // RECORDING, PROCESSING, COMPLETED, FAILED
+  audioUrl  String?
+  createdAt DateTime @default(now())
+  userId    String?  // Secures the row bounds explicitly to Clerk Authentication Tokens 
+
+
+  segments  TranscriptSegment[]
+  summary   MeetingSummary?
+  actions   ActionItem[]
+}
+
+model TranscriptSegment {
+  id               String   @id @default(uuid())
+  meetingId        String
+  speakerLabel     String
+  startTime        Float
+  endTime          Float
+  originalText     String
+  detectedLanguage String
+  translatedTextEn String?
+  codeSwitchFlag   Boolean  @default(false)
+  
+  meeting          Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+}
+
+model ActionItem {
+  id               String   @id @default(uuid())
+  meetingId        String
+  title            String
+  owner            String?
+  dueDate          String?
+  status           String   @default("TODO")
+  sourceLanguage   String
+  linkedSegmentIds String   // comma-separated segment IDs for traceback
+
+  meeting          Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+}
+
+model MeetingSummary {
+  id         String   @id @default(uuid())
+  meetingId  String   @unique
+  abstract   String
+  keyPoints  String   // JSON array or text
+  risks      String?  
+  blockers   String?  
+
+  meeting    Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+}
