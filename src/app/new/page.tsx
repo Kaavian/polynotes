@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import { Mic, Square, UploadCloud, FileAudio, ArrowRight, Sparkles, CheckCircle2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 
-export default function NewMeeting() {
+function NewMeetingContent() {
   const searchParams = useSearchParams();
   const initMode = searchParams.get("mode") === "record" ? "record" : "upload";
   const [mode, setMode] = useState<"record"|"upload">(initMode);
@@ -369,3 +369,12 @@ export default function NewMeeting() {
     </div>
   );
 }
+
+export default function NewMeeting() {
+  return (
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center min-h-[50vh] text-foreground/50">Loading interface...</div>}>
+      <NewMeetingContent />
+    </Suspense>
+  );
+}
+
