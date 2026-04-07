@@ -49,7 +49,7 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
     let fileState = uploadResult.state;
     while (fileState === 'PROCESSING') {
       await new Promise((resolve) => setTimeout(resolve, 3000));
-      const fileStatusRef = await ai.files.get({ name: uploadResult.name });
+      const fileStatusRef = await ai.files.get({ name: String(uploadResult.name) });
       fileState = fileStatusRef.state;
       uploadResult = fileStatusRef;
     }
