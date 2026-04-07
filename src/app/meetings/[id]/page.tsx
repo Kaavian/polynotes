@@ -38,7 +38,7 @@ export default function MeetingDetails() {
   const router = useRouter();
   const id = params.id as string;
   
-  const [meeting, setMeeting] = useState<any>(null);
+  const [meeting, setMeeting] = useState<{ id: string; title: string; status: string; createdAt: string } | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -114,7 +114,7 @@ export default function MeetingDetails() {
         {["summary", "actions", "transcript"].map(tab => (
           <button 
             key={tab}
-            onClick={() => setActiveTab(tab as any)}
+            onClick={() => setActiveTab(tab as "summary" | "actions" | "transcript")}
             className={`px-4 py-2.5 font-semibold capitalize whitespace-nowrap transition-all border-b-2 rounded-t-lg ${activeTab === tab ? "border-indigo-500 text-indigo-500 bg-indigo-500/5" : "border-transparent text-foreground/60 hover:text-foreground hover:bg-surface-hover"}`}
           >
             {tab}

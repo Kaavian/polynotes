@@ -52,18 +52,19 @@ export async function POST(request: Request) {
       for await (const chunk of streamMeetingWithGemini(tmpPath, mimeType)) {
          accumulatedJson += chunk;
       }
-    } catch (e) {
-      console.error("Chunk Stream generation failed natively:", e);
+    } catch (streamingError) {
+      console.error("Chunk Stream generation failed natively:", streamingError);
     }
     
-    try { fs.unlinkSync(tmpPath); } catch (e) {}
+    try { fs.unlinkSync(tmpPath); } catch {}
 
     // Extract valid segments regardless of stream failures
-    let validSegments: any[] = [];
+    type TranscriptSegmentBase = { speakerLabel: string; startTime: number; endTime: number; originalText: string; detectedLanguage: string; translatedTextEn: string | null; codeSwitchFlag: boolean; };
+    let validSegments: TranscriptSegmentBase[] = [];
     const segmentMatches = accumulatedJson.match(/\{\s*"speakerLabel"[\s\S]*?\}/g);
     if (segmentMatches) {
       validSegments = segmentMatches.map(m => {
-        try { return JSON.parse(m); } catch(e) { return null; }
+        try { return JSON.parse(m); } catch { return null; }
       }).filter(Boolean);
     }
     

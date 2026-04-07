@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Mic, Square, UploadCloud, FileAudio, ArrowRight, Loader2, Sparkles, CheckCircle2 } from "lucide-react";
+import { Mic, Square, UploadCloud, FileAudio, ArrowRight, Sparkles, CheckCircle2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -25,7 +25,9 @@ export default function NewMeeting() {
   const [title, setTitle] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressState, setProgressState] = useState({ percent: 0, text: "" });
-  const [liveSegments, setLiveSegments] = useState<any[]>([]);
+  
+  type ParseableSegment = { speakerLabel: string; startTime: number; endTime: number; originalText: string; detectedLanguage: string; translatedTextEn: string | null; codeSwitchFlag: boolean; };
+  const [liveSegments, setLiveSegments] = useState<ParseableSegment[]>([]);
   const segmentContainerRef = useRef<HTMLDivElement>(null);
 
   // Timer effect
@@ -135,11 +137,11 @@ export default function NewMeeting() {
           const segmentMatches = accumulated.match(/\{\s*"speakerLabel"[\s\S]*?\}/g);
           if (segmentMatches) {
              const parsedSegments = segmentMatches.map(m => {
-                try { return JSON.parse(m); } catch(e) { return null; }
+                try { return JSON.parse(m); } catch { return null; }
              }).filter(Boolean);
              
              if (parsedSegments.length > lastSegmentsLength) {
-                setLiveSegments(parsedSegments as any[]);
+                setLiveSegments(parsedSegments as ParseableSegment[]);
                 lastSegmentsLength = parsedSegments.length;
                 setProgressState({ percent: Math.min(85, 30 + (parsedSegments.length * 3)), text: "Transcribing and translating live stream..." });
              }

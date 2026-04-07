@@ -42,20 +42,21 @@ export async function POST(request: Request) {
              accumulatedJson += chunk;
              controller.enqueue(new TextEncoder().encode(chunk));
           }
-        } catch (e) {
-          console.error("Stream generation failed:", e);
+        } catch (streamingError) {
+          console.error("Stream generation failed:", streamingError);
         }
         
-        try { fs.unlinkSync(tmpPath); } catch (e) {}
+        try { fs.unlinkSync(tmpPath); } catch {}
 
         // Wait to finish the DB saving block securely so the client redirect doesn't visually race the DB
         try {
           // Use safe Regex block extraction identical to the frontend so a truncated stream still cleanly extracts 99% of valid segments!
-          let validSegments: any[] = [];
+          type TranscriptSegmentBase = { speakerLabel: string; startTime: number; endTime: number; originalText: string; detectedLanguage: string; translatedTextEn: string | null; codeSwitchFlag: boolean; };
+          let validSegments: TranscriptSegmentBase[] = [];
           const segmentMatches = accumulatedJson.match(/\{\s*"speakerLabel"[\s\S]*?\}/g);
           if (segmentMatches) {
             validSegments = segmentMatches.map(m => {
-              try { return JSON.parse(m); } catch(e) { return null; }
+              try { return JSON.parse(m); } catch { return null; }
             }).filter(Boolean);
           }
           
@@ -76,15 +77,16 @@ export async function POST(request: Request) {
           }
 
           // Try to safely extract Summary and Actions if they completed, or use graceful fallbacks
-          let summaryData: any = { abstract: "The transcription stream ended before a complete summary could be finalized.", keyPoints: ["Partial transcript captured"], risks: [], blockers: [] };
-          let actionsData: any[] = [];
+          type FallbackSummary = { abstract: string; keyPoints: string[]; risks: string[]; blockers: string[] };
+          let summaryData: FallbackSummary = { abstract: "The transcription stream ended before a complete summary could be finalized.", keyPoints: ["Partial transcript captured"], risks: [], blockers: [] };
+          let actionsData: Record<string, string | number | null>[] = [];
           
           try {
             // Attempt a full parse if the stream cleanly finished without hitting token limits
             const intel = JSON.parse(accumulatedJson);
             if (intel.summary) summaryData = intel.summary;
             if (intel.actions) actionsData = intel.actions;
-          } catch (e) {
+          } catch {
             console.warn("JSON was natively truncated mid-stream. Repairing JSON tree globally to salvage valid components...");
             const segmentsIndexStart = accumulatedJson.lastIndexOf('"segments"');
             if (segmentsIndexStart !== -1) {
@@ -93,7 +95,7 @@ export async function POST(request: Request) {
                 const repairedIntel = JSON.parse(repairedJson);
                 if (repairedIntel.summary) summaryData = repairedIntel.summary;
                 if (repairedIntel.actions) actionsData = repairedIntel.actions;
-              } catch (e2) {
+              } catch {
                  console.error("JSON Repair tree failed. Metadata blocks extremely corrupt.");
               }
             }

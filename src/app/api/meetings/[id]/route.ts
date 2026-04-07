@@ -22,16 +22,22 @@ export async function GET(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const meetingData = meeting as typeof meeting & {
+      segments: unknown[];
+      actions: unknown[];
+      summary: unknown;
+    };
+
     return NextResponse.json({
       meeting: {
-        id: meeting.id,
-        title: meeting.title,
-        status: meeting.status,
-        createdAt: meeting.createdAt
+        id: meetingData.id,
+        title: meetingData.title,
+        status: meetingData.status,
+        createdAt: meetingData.createdAt
       },
-      segments: meeting.segments,
-      actions: meeting.actions,
-      summary: meeting.summary
+      segments: meetingData.segments,
+      actions: meetingData.actions,
+      summary: meetingData.summary
     });
   } catch (error) {
     console.error("Error fetching meeting:", error);

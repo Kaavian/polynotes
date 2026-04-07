@@ -48,7 +48,7 @@ export default function Dashboard() {
             <Calendar className="w-8 h-8 text-foreground/40" />
           </div>
           <h3 className="text-xl font-bold mb-2">No meetings yet</h3>
-          <p className="text-foreground/60 mb-6 max-w-md font-medium">You haven't recorded or uploaded any meetings. Start capturing your multilingual calls to generate insights.</p>
+          <p className="text-foreground/60 mb-6 max-w-md font-medium">You haven&apos;t recorded or uploaded any meetings. Start capturing your multilingual calls to generate insights.</p>
           <Link href="/new" className="font-bold text-indigo-500 hover:text-indigo-400">Capture your first meeting &rarr;</Link>
         </div>
       ) : (

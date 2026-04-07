@@ -1,5 +1,4 @@
 import { GoogleGenAI } from '@google/genai';
-import * as fs from 'fs';
 
 const ai = new GoogleGenAI({ 
   apiKey: process.env.GEMINI_API_KEY || "dummy",
@@ -38,7 +37,7 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
     return;
   }
 
-  let uploadResult: any = null;
+  let uploadResult: Record<string, unknown> | null = null;
 
   try {
     uploadResult = await ai.files.upload({
@@ -121,14 +120,15 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
     }
 
     try {
-      await ai.files.delete({ name: uploadResult.name });
-    } catch(e) { }
+      await ai.files.delete({ name: String(uploadResult.name) });
+    } catch { }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (uploadResult) {
-      try { await ai.files.delete({ name: uploadResult.name }); } catch(e) { }
+      try { await ai.files.delete({ name: String(uploadResult.name) }); } catch { }
     }
-    console.error("Gemini meeting streaming failed natively:", error?.message || error);
+    const safeError = error instanceof Error ? error.message : String(error);
+    console.error("Gemini meeting streaming failed natively:", safeError);
     // Yield a safe JSON stream terminator so partial segment parsing works cleanly up to the crash point
     yield '\n] }'; 
   }

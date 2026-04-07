@@ -5,7 +5,7 @@ export interface segmentData {
   text: string;
 }
 
-export async function transcribeWithElevenLabs(audioFile: File, mimeType: string = 'audio/webm'): Promise<segmentData[]> {
+export async function transcribeWithElevenLabs(audioFile: File): Promise<segmentData[]> {
   const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
   if (!ELEVENLABS_API_KEY) {
     console.warn("No ElevenLabs API Key provided. Returning mock segments for demonstration.");
@@ -42,9 +42,16 @@ export async function transcribeWithElevenLabs(audioFile: File, mimeType: string
 }
 
 // Very simple grouping of words by speaker into segments
-function processWordsIntoSegments(words: any[]): segmentData[] {
+interface ElevenLabsWord {
+  speaker_id?: string;
+  start: number;
+  end: number;
+  text: string;
+}
+
+function processWordsIntoSegments(words: ElevenLabsWord[]): segmentData[] {
   const segments: segmentData[] = [];
-  let currentSegment: any = null;
+  let currentSegment: segmentData | null = null;
 
   for (const word of words) {
     const speaker = word.speaker_id || "Speaker 1";
