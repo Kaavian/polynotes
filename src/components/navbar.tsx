@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { Moon, Sun, Mic } from "lucide-react";
 import { useEffect, useState } from "react";
+import { UserButton, SignedIn, SignedOut, SignInButton } from "@clerk/nextjs";
 
 export function Navbar() {
   const { theme, setTheme } = useTheme();
@@ -30,11 +31,19 @@ export function Navbar() {
           {mounted && (
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="p-2 rounded-full hover:bg-surface-hover transition-colors ml-2"
+              className="p-2 rounded-full hover:bg-surface-hover transition-colors ml-2 mr-2"
             >
               {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
           )}
+          <SignedIn>
+            <UserButton userProfileMode="navigation" userProfileUrl="/profile" />
+          </SignedIn>
+          <SignedOut>
+            <SignInButton mode="modal">
+              <button className="text-sm font-medium bg-foreground text-background hover:bg-foreground/90 px-4 py-2 rounded-full transition-colors ml-2">Sign In</button>
+            </SignInButton>
+          </SignedOut>
         </div>
       </div>
     </nav>
