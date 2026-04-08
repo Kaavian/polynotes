@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { verifyToken } from '@clerk/backend';
 import { streamMeetingWithGemini } from '@/lib/gemini';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -21,11 +22,37 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await audioBlob.arrayBuffer());
     
-    const { userId } = await import('@clerk/nextjs/server').then(m => m.auth());
-    
-    // Rigid Authentication Guardrail
+    // Dual-path authentication: standard Clerk auth for web requests,
+    // manual JWT verification for Chrome extension Bearer token requests
+    let userId: string | null = null;
+
+    // Path 1: Standard Clerk auth (works for normal web app requests)
+    try {
+      const clerkAuth = await import('@clerk/nextjs/server').then(m => m.auth());
+      userId = clerkAuth.userId;
+    } catch (e) {
+      console.log('Standard Clerk auth unavailable, trying Bearer token...');
+    }
+
+    // Path 2: Manual Bearer token verification (for Chrome extension requests)
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
+      const authHeader = request.headers.get('Authorization');
+      const token = authHeader?.replace('Bearer ', '');
+      if (token) {
+        try {
+          const verifiedToken = await verifyToken(token, {
+            secretKey: process.env.CLERK_SECRET_KEY!,
+          });
+          userId = verifiedToken.sub;
+          console.log('Extension auth verified for user:', userId);
+        } catch (e) {
+          console.error('Bearer token verification failed:', e);
+        }
+      }
+    }
+
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized. Please sign in to PolyNotes first." }, { status: 401 });
     }
 
     const meeting = await prisma.meeting.create({
