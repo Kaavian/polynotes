@@ -30,7 +30,7 @@ export interface FullIntelligenceResult {
   }[];
 }
 
-export async function* streamMeetingWithGemini(filePath: string, mimeType: string = "audio/webm"): AsyncGenerator<string, void, unknown> {
+export async function* streamMeetingWithGemini(filePath: string, mimeType: string = "audio/webm", speakerTimestamps?: string | null): AsyncGenerator<string, void, unknown> {
   if (!process.env.GEMINI_API_KEY) {
     console.warn("No Gemini API key. Returning unified mock dynamically.");
     yield JSON.stringify(executeUnifiedMock());
@@ -76,7 +76,11 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
       2. For 'detectedLanguage', identify the spoken language (e.g. "English", "Tamil", "English & Tamil").
       3. For 'translatedTextEn': If the sentence contains ANY Tamil/Non-English words, output the FULL pure English translation of the entire sentence here. If the sentence is 100% English A-Z words, STRICTLY set this to null.
       4. Set 'codeSwitchFlag' to true if you mixed English A-Z words and Tamil words in the same segment.
-      5. Generate a comprehensive meeting summary and action items based precisely on the segments.
+      
+      ${speakerTimestamps ? `5. CRITICAL ARCHITECTURAL DIRECTIVE: The Google Meet engine natively scraped the EXACT real names of the meeting participants and mapped them to their specific speaking time boundaries! 
+         Here is the chronological active speaker map perfectly mapped alongside offsets (in milliseconds) for this WebM audio segment:
+         [SPEAKER MAP LOGS]: ${speakerTimestamps}
+         You are MATHEMATICALLY REQUIRED to use the names found inside this exact map corresponding to their timeframe limits for your 'speakerLabel' instead of generic aliases like "Speaker 1"!` : `5. Generate a comprehensive meeting summary and action items based precisely on the segments.`}
 
       Return your response STRICTLY as a JSON object matching this schema. You MUST output the 'summary' and 'actions' arrays FIRST.
       {

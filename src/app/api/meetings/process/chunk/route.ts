@@ -10,11 +10,18 @@ const prisma = new PrismaClient();
 export async function POST(request: Request) {
   try {
     const { userId } = await import('@clerk/nextjs/server').then(m => m.auth());
+    
+    // Rigid Authentication Guardrail
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized access blocked. Please authenticate." }, { status: 401 });
+    }
+
     const formData = await request.formData();
     const audioBlob = formData.get('audio') as File | null;
     const meetingIdInput = formData.get('meetingId') as string | null;
     const title = formData.get('title') as string || "Live Meeting Recording";
     const mimeType = formData.get('mimeType') as string || "audio/webm";
+    const speakerTimestamps = formData.get('speakerTimestamps') as string | null;
     const timeOffset = parseInt((formData.get('timeOffset') as string) || "0", 10);
 
     if (!audioBlob) {
@@ -36,7 +43,7 @@ export async function POST(request: Request) {
         data: { 
           title: title, 
           status: "PROCESSING",
-          userId: userId || null 
+          userId: userId 
         }
       });
     }
@@ -49,7 +56,7 @@ export async function POST(request: Request) {
 
     let accumulatedJson = "";
     try {
-      for await (const chunk of streamMeetingWithGemini(tmpPath, mimeType)) {
+      for await (const chunk of streamMeetingWithGemini(tmpPath, mimeType, speakerTimestamps)) {
          accumulatedJson += chunk;
       }
     } catch (streamingError) {

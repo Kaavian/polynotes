@@ -13,6 +13,7 @@ export async function POST(request: Request) {
     const audioBlob = formData.get('audio') as File;
     const title = formData.get('title') as string || "Untitled Meeting";
     const mimeType = formData.get('mimeType') as string || "audio/webm";
+    const speakerTimestamps = formData.get('speakerTimestamps') as string | null;
 
     if (!audioBlob) {
       return NextResponse.json({ error: "No audio provided" }, { status: 400 });
@@ -21,8 +22,14 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await audioBlob.arrayBuffer());
     
     const { userId } = await import('@clerk/nextjs/server').then(m => m.auth());
+    
+    // Rigid Authentication Guardrail
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized access blocked." }, { status: 401 });
+    }
+
     const meeting = await prisma.meeting.create({
-      data: { title: title, status: "PROCESSING", userId: userId || null }
+      data: { title: title, status: "PROCESSING", userId: userId }
     });
 
     const ext = audioBlob.name ? path.extname(audioBlob.name) : '.webm';
@@ -38,7 +45,7 @@ export async function POST(request: Request) {
         
         try {
           // Stream raw tokens natively to the client for live parsing
-          for await (const chunk of streamMeetingWithGemini(tmpPath, mimeType)) {
+          for await (const chunk of streamMeetingWithGemini(tmpPath, mimeType, speakerTimestamps)) {
              accumulatedJson += chunk;
              controller.enqueue(new TextEncoder().encode(chunk));
           }
