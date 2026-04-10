@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 
 const ai = new GoogleGenAI({ 
   apiKey: process.env.GEMINI_API_KEY || "dummy",
-  httpOptions: { timeout: 0 } // Prevent Node.js undici 5-minute HEADERS_TIMEOUT crash for enormous 1-hour audio transcriptions
+  httpOptions: { timeout: 0 }
 });
 
 export interface FullIntelligenceResult {
@@ -21,9 +21,9 @@ export interface FullIntelligenceResult {
   }[];
   segments: {
     speakerLabel: string;
-    startTime: number;    // seconds
-    endTime: number;      // seconds
-    originalText: string; // The strictly native language script
+    startTime: number;
+    endTime: number;
+    originalText: string;
     detectedLanguage: string;
     translatedTextEn: string | null;
     codeSwitchFlag: boolean;
@@ -32,22 +32,34 @@ export interface FullIntelligenceResult {
 
 export async function* streamMeetingWithGemini(filePath: string, mimeType: string = "audio/webm", speakerTimestamps?: string | null): AsyncGenerator<string, void, unknown> {
   if (!process.env.GEMINI_API_KEY) {
-    console.warn("No Gemini API key. Returning unified mock dynamically.");
+    console.error("[PolyNotes Gemini] GEMINI_API_KEY is not set! Returning mock data.");
     yield JSON.stringify(executeUnifiedMock());
     return;
   }
 
-  // Use inline typing derived exactly from the SDK returns since their File_2 object doesn't expose an interface definition
+  console.log(`[PolyNotes Gemini] Starting processing. File: ${filePath}, MimeType: ${mimeType}`);
+  console.log(`[PolyNotes Gemini] API Key present: ${process.env.GEMINI_API_KEY ? 'YES (starts with ' + process.env.GEMINI_API_KEY.substring(0, 8) + '...)' : 'NO'}`);
+
   let uploadResult: { name?: string; uri?: string; mimeType?: string; state?: string } | null = null;
 
   try {
+    // Step 1: Upload the audio file to Gemini Files API
+    console.log("[PolyNotes Gemini] Step 1: Uploading audio file to Gemini Files API...");
+    const uploadStart = Date.now();
+    
     uploadResult = await ai.files.upload({
       file: filePath,
       config: { mimeType: mimeType }
     });
+    
+    console.log(`[PolyNotes Gemini] Upload complete in ${Date.now() - uploadStart}ms. File name: ${uploadResult.name}, state: ${uploadResult.state}`);
 
+    // Step 2: Wait for Gemini to process the uploaded file
     let fileState = uploadResult.state;
+    let pollCount = 0;
     while (fileState === 'PROCESSING') {
+      pollCount++;
+      console.log(`[PolyNotes Gemini] Step 2: File still processing... (poll #${pollCount})`);
       await new Promise((resolve) => setTimeout(resolve, 3000));
       const fileStatusRef = await ai.files.get({ name: String(uploadResult.name) });
       fileState = fileStatusRef.state;
@@ -55,9 +67,14 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
     }
     
     if (fileState === 'FAILED') {
-      throw new Error("Gemini rejected the audio file entirely (FAILED state).");
+      const errorMsg = `Gemini rejected the audio file (state=FAILED). File: ${uploadResult.name}`;
+      console.error(`[PolyNotes Gemini] ${errorMsg}`);
+      throw new Error(errorMsg);
     }
 
+    console.log(`[PolyNotes Gemini] File ready. State: ${fileState}, URI: ${uploadResult.uri}`);
+
+    // Step 3: Send the file to Gemini for transcription
     const prompt = `
       You are PolyNotes AI, an expert multilingual meeting transcription and intelligence engine.
       I have uploaded an audio recording of a meeting where speakers may code-switch heavily between English and Indian languages (Tamil, Hindi, Telugu, etc.).
@@ -111,6 +128,9 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
       }
     ];
 
+    console.log("[PolyNotes Gemini] Step 3: Sending to Gemini for transcription stream...");
+    const streamStart = Date.now();
+
     const stream = await ai.models.generateContentStream({
       model: "gemini-2.5-flash",
       contents: contents,
@@ -119,14 +139,21 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
       }
     });
 
+    let chunkCount = 0;
+    let totalChars = 0;
     for await (const chunk of stream) {
       if (chunk.text) {
+        chunkCount++;
+        totalChars += chunk.text.length;
         yield chunk.text;
       }
     }
 
+    console.log(`[PolyNotes Gemini] Stream complete in ${Date.now() - streamStart}ms. Chunks: ${chunkCount}, Total chars: ${totalChars}`);
+
     try {
       await ai.files.delete({ name: String(uploadResult.name) });
+      console.log("[PolyNotes Gemini] Cleaned up uploaded file from Gemini.");
     } catch { }
 
   } catch (error: unknown) {
@@ -134,9 +161,10 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
       try { await ai.files.delete({ name: String(uploadResult.name) }); } catch { }
     }
     const safeError = error instanceof Error ? error.message : String(error);
-    console.error("Gemini meeting streaming failed natively:", safeError);
-    // Yield a safe JSON stream terminator so partial segment parsing works cleanly up to the crash point
-    yield '\n] }'; 
+    console.error("[PolyNotes Gemini] CRITICAL FAILURE:", safeError);
+    
+    // Yield an error marker that the route can detect and surface to the user
+    yield `__GEMINI_ERROR__:${safeError}`;
   }
 }
 
@@ -172,7 +200,7 @@ export async function generateMeetingMetadataWithGemini(fullTranscriptText: stri
     const parsed = JSON.parse(response.text || "{}");
     return parsed as FullIntelligenceResult;
   } catch (error) {
-    console.error("Gemini metadata generation failed natively:", error);
+    console.error("Gemini metadata generation failed:", error);
     return executeUnifiedMock();
   }
 }

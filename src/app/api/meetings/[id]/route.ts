@@ -33,7 +33,8 @@ export async function GET(request: Request, { params }: { params: { id: string }
         id: meetingData.id,
         title: meetingData.title,
         status: meetingData.status,
-        createdAt: meetingData.createdAt
+        createdAt: meetingData.createdAt,
+        audioUrl: meetingData.audioUrl
       },
       segments: meetingData.segments,
       actions: meetingData.actions,

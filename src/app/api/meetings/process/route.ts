@@ -55,13 +55,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized. Please sign in to PolyNotes first." }, { status: 401 });
     }
 
+    const ext = audioBlob.name ? path.extname(audioBlob.name) : '.webm';
+    
     const meeting = await prisma.meeting.create({
       data: { title: title, status: "PROCESSING", userId: userId }
     });
 
-    const ext = audioBlob.name ? path.extname(audioBlob.name) : '.webm';
-    const tmpPath = path.join(os.tmpdir(), `${meeting.id}${ext}`);
-    fs.writeFileSync(tmpPath, buffer);
+    // Save permanently for frontend playback/download
+    const publicPath = path.join(process.cwd(), 'public', 'uploads', `${meeting.id}${ext}`);
+    const audioUrl = `/uploads/${meeting.id}${ext}`;
+    fs.writeFileSync(publicPath, buffer);
+    
+    await prisma.meeting.update({
+      where: { id: meeting.id },
+      data: { audioUrl: audioUrl }
+    });
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -72,7 +80,7 @@ export async function POST(request: Request) {
         
         try {
           // Stream raw tokens natively to the client for live parsing
-          for await (const chunk of streamMeetingWithGemini(tmpPath, mimeType, speakerTimestamps)) {
+          for await (const chunk of streamMeetingWithGemini(publicPath, mimeType, speakerTimestamps)) {
              accumulatedJson += chunk;
              controller.enqueue(new TextEncoder().encode(chunk));
           }
@@ -80,8 +88,6 @@ export async function POST(request: Request) {
           console.error("Stream generation failed:", streamingError);
         }
         
-        try { fs.unlinkSync(tmpPath); } catch {}
-
         // Wait to finish the DB saving block securely so the client redirect doesn't visually race the DB
         try {
           // Use safe Regex block extraction identical to the frontend so a truncated stream still cleanly extracts 99% of valid segments!

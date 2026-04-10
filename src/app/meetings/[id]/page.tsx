@@ -38,7 +38,7 @@ export default function MeetingDetails() {
   const router = useRouter();
   const id = params.id as string;
   
-  const [meeting, setMeeting] = useState<{ id: string; title: string; status: string; createdAt: string } | null>(null);
+  const [meeting, setMeeting] = useState<{ id: string; title: string; status: string; createdAt: string; audioUrl?: string } | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -98,16 +98,21 @@ export default function MeetingDetails() {
             <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" /> {meeting.status}</span>
           </div>
         </div>
-        <button 
-          onClick={async () => {
-            if (!confirm("Are you sure you want to completely delete this meeting?")) return;
-            await fetch(`/api/meetings/${id}`, { method: 'DELETE' });
-            router.push('/dashboard');
-          }}
-          className="flex items-center gap-2 bg-red-500/10 hover:bg-red-500 border border-red-500/20 text-red-500 hover:text-white px-4 py-2.5 rounded-lg text-sm font-bold transition-colors"
-        >
-          <Trash className="w-4 h-4" /> Delete Meeting
-        </button>
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4">
+          {meeting.audioUrl && (
+            <audio controls src={meeting.audioUrl} className="h-10 w-full sm:w-64 max-w-full" preload="metadata" />
+          )}
+          <button 
+            onClick={async () => {
+              if (!confirm("Are you sure you want to completely delete this meeting?")) return;
+              await fetch(`/api/meetings/${id}`, { method: 'DELETE' });
+              router.push('/dashboard');
+            }}
+            className="flex items-center gap-2 bg-red-500/10 hover:bg-red-500 border border-red-500/20 text-red-500 hover:text-white px-4 py-2.5 rounded-lg text-sm font-bold transition-colors w-full sm:w-auto shrink-0 justify-center"
+          >
+            <Trash className="w-4 h-4" /> Delete Meeting
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 sm:gap-6 mb-8 border-b border-border pb-1 overflow-x-auto no-scrollbar">
