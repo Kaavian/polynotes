@@ -4,7 +4,6 @@ import { verifyToken } from '@clerk/backend';
 import { streamMeetingWithGemini } from '@/lib/gemini';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 
 const prisma = new PrismaClient();
 
@@ -30,7 +29,7 @@ export async function POST(request: Request) {
     try {
       const clerkAuth = await import('@clerk/nextjs/server').then(m => m.auth());
       userId = clerkAuth.userId;
-    } catch (e) {
+    } catch {
       console.log('Standard Clerk auth unavailable, trying Bearer token...');
     }
 
