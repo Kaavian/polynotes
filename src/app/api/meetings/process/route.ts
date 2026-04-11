@@ -1,3 +1,4 @@
+export const maxDuration = 300; // Allow sufficient time for AI processing before Vercel timeouts stringently kill the process
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { verifyToken } from '@clerk/backend';

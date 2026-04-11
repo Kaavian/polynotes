@@ -43,38 +43,6 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
   let uploadResult: { name?: string; uri?: string; mimeType?: string; state?: string } | null = null;
 
   try {
-    // Step 1: Upload the audio file to Gemini Files API
-    console.log("[PolyNotes Gemini] Step 1: Uploading audio file to Gemini Files API...");
-    const uploadStart = Date.now();
-    
-    uploadResult = await ai.files.upload({
-      file: filePath,
-      config: { mimeType: mimeType }
-    });
-    
-    console.log(`[PolyNotes Gemini] Upload complete in ${Date.now() - uploadStart}ms. File name: ${uploadResult.name}, state: ${uploadResult.state}`);
-
-    // Step 2: Wait for Gemini to process the uploaded file
-    let fileState = uploadResult.state;
-    let pollCount = 0;
-    while (fileState === 'PROCESSING') {
-      pollCount++;
-      console.log(`[PolyNotes Gemini] Step 2: File still processing... (poll #${pollCount})`);
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      const fileStatusRef = await ai.files.get({ name: String(uploadResult.name) });
-      fileState = fileStatusRef.state;
-      uploadResult = fileStatusRef;
-    }
-    
-    if (fileState === 'FAILED') {
-      const errorMsg = `Gemini rejected the audio file (state=FAILED). File: ${uploadResult.name}`;
-      console.error(`[PolyNotes Gemini] ${errorMsg}`);
-      throw new Error(errorMsg);
-    }
-
-    console.log(`[PolyNotes Gemini] File ready. State: ${fileState}, URI: ${uploadResult.uri}`);
-
-    // Step 3: Send the file to Gemini for transcription
     const prompt = `
       You are PolyNotes AI, an expert multilingual meeting transcription and intelligence engine.
       I have uploaded an audio recording of a meeting where speakers may code-switch heavily between English and Indian languages (Tamil, Hindi, Telugu, etc.).
@@ -94,10 +62,10 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
       3. For 'translatedTextEn': If the sentence contains ANY Tamil/Non-English words, output the FULL pure English translation of the entire sentence here. If the sentence is 100% English A-Z words, STRICTLY set this to null.
       4. Set 'codeSwitchFlag' to true if you mixed English A-Z words and Tamil words in the same segment.
       
-      ${speakerTimestamps ? `5. CRITICAL ARCHITECTURAL DIRECTIVE: The Google Meet engine natively scraped the EXACT real names of the meeting participants and mapped them to their specific speaking time boundaries! 
+      ${speakerTimestamps ? \`5. CRITICAL ARCHITECTURAL DIRECTIVE: The Google Meet engine natively scraped the EXACT real names of the meeting participants and mapped them to their specific speaking time boundaries! 
          Here is the chronological active speaker map perfectly mapped alongside offsets (in milliseconds) for this WebM audio segment:
-         [SPEAKER MAP LOGS]: ${speakerTimestamps}
-         You are MATHEMATICALLY REQUIRED to use the names found inside this exact map corresponding to their timeframe limits for your 'speakerLabel' instead of generic aliases like "Speaker 1"!` : `5. Generate a comprehensive meeting summary and action items based precisely on the segments.`}
+         [SPEAKER MAP LOGS]: \${speakerTimestamps}
+         You are MATHEMATICALLY REQUIRED to use the names found inside this exact map corresponding to their timeframe limits for your 'speakerLabel' instead of generic aliases like "Speaker 1"!\` : \`5. Generate a comprehensive meeting summary and action items based precisely on the segments.\`}
 
       Return your response STRICTLY as a JSON object matching this schema. You MUST output the 'summary' and 'actions' arrays FIRST.
       {
@@ -117,15 +85,59 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
       }
     `;
 
+    const TWENTY_MB = 19.5 * 1024 * 1024;
+    const stats = fs.statSync(filePath);
+    let userParts: any[] = [];
+
+    if (stats.size < TWENTY_MB) {
+      console.log(\`[PolyNotes Gemini] File is \${stats.size} bytes (<20MB). Using direct inlineData to guarantee ultra-fast processing and avoid WebM hanging!\`);
+      const buffer = fs.readFileSync(filePath);
+      userParts = [
+        { inlineData: { mimeType: mimeType, data: buffer.toString('base64') } },
+        { text: prompt }
+      ];
+    } else {
+      // Step 1: Upload the audio file to Gemini Files API
+      console.log("[PolyNotes Gemini] Step 1: Uploading large audio file (>20MB) to Gemini Files API...");
+      const uploadStart = Date.now();
+      
+      uploadResult = await ai.files.upload({
+        file: filePath,
+        config: { mimeType: mimeType }
+      });
+      
+      console.log(\`[PolyNotes Gemini] Upload complete in \${Date.now() - uploadStart}ms. File URI: \${uploadResult.uri}, state: \${uploadResult.state}\`);
+
+      // Step 2: Wait for Gemini to process the uploaded file with a rigid timeout
+      let fileState = uploadResult.state;
+      let pollCount = 0;
+      while (fileState === 'PROCESSING') {
+        pollCount++;
+        if (pollCount > 30) { // 30 * 3s = 90s Hard Timeout
+          throw new Error("Gemini rejected and hung on processing the webm audio stream (exceeded 90 seconds timeout). The file is unparsable.");
+        }
+        console.log(\`[PolyNotes Gemini] Step 2: File still processing... (poll #\${pollCount})\`);
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const fileStatusRef = await ai.files.get({ name: String(uploadResult.name) });
+        fileState = fileStatusRef.state;
+        uploadResult = fileStatusRef;
+      }
+      
+      if (fileState === 'FAILED') {
+        const errorMsg = \`Gemini rejected the audio file (state=FAILED). File: \${uploadResult.name}\`;
+        console.error(\`[PolyNotes Gemini] \${errorMsg}\`);
+        throw new Error(errorMsg);
+      }
+
+      userParts = [
+        { fileData: { fileUri: uploadResult.uri, mimeType: uploadResult.mimeType } },
+        { text: prompt }
+      ];
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const contents: any = [
-      {
-        role: "user",
-        parts: [
-          { fileData: { fileUri: uploadResult.uri, mimeType: uploadResult.mimeType } },
-          { text: prompt }
-        ]
-      }
+      { role: "user", parts: userParts }
     ];
 
     console.log("[PolyNotes Gemini] Step 3: Sending to Gemini for transcription stream...");
