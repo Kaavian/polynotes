@@ -63,10 +63,10 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
       3. For 'translatedTextEn': If the sentence contains ANY Tamil/Non-English words, output the FULL pure English translation of the entire sentence here. If the sentence is 100% English A-Z words, STRICTLY set this to null.
       4. Set 'codeSwitchFlag' to true if you mixed English A-Z words and Tamil words in the same segment.
       
-      ${speakerTimestamps ? \`5. CRITICAL ARCHITECTURAL DIRECTIVE: The Google Meet engine natively scraped the EXACT real names of the meeting participants and mapped them to their specific speaking time boundaries! 
+      ${speakerTimestamps ? `5. CRITICAL ARCHITECTURAL DIRECTIVE: The Google Meet engine natively scraped the EXACT real names of the meeting participants and mapped them to their specific speaking time boundaries! 
          Here is the chronological active speaker map perfectly mapped alongside offsets (in milliseconds) for this WebM audio segment:
-         [SPEAKER MAP LOGS]: \${speakerTimestamps}
-         You are MATHEMATICALLY REQUIRED to use the names found inside this exact map corresponding to their timeframe limits for your 'speakerLabel' instead of generic aliases like "Speaker 1"!\` : \`5. Generate a comprehensive meeting summary and action items based precisely on the segments.\`}
+         [SPEAKER MAP LOGS]: ${speakerTimestamps}
+         You are MATHEMATICALLY REQUIRED to use the names found inside this exact map corresponding to their timeframe limits for your 'speakerLabel' instead of generic aliases like "Speaker 1"!` : `5. Generate a comprehensive meeting summary and action items based precisely on the segments.`}
 
       Return your response STRICTLY as a JSON object matching this schema. You MUST output the 'summary' and 'actions' arrays FIRST.
       {
@@ -88,6 +88,7 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
 
     const TWENTY_MB = 19.5 * 1024 * 1024;
     const stats = fs.statSync(filePath);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let userParts: any[] = [];
 
     if (stats.size < TWENTY_MB) {
@@ -165,8 +166,10 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
     console.log(`[PolyNotes Gemini] Stream complete in ${Date.now() - streamStart}ms. Chunks: ${chunkCount}, Total chars: ${totalChars}`);
 
     try {
-      await ai.files.delete({ name: String(uploadResult.name) });
-      console.log("[PolyNotes Gemini] Cleaned up uploaded file from Gemini.");
+      if (uploadResult) {
+        await ai.files.delete({ name: String(uploadResult.name) });
+        console.log("[PolyNotes Gemini] Cleaned up uploaded file from Gemini.");
+      }
     } catch { }
 
   } catch (error: unknown) {
