@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import * as fs from 'fs';
 
 const ai = new GoogleGenAI({ 
   apiKey: process.env.GEMINI_API_KEY || "dummy",
