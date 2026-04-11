@@ -1,4 +1,4 @@
-export const maxDuration = 300; // Allow sufficient time for AI processing before Vercel timeouts stringently kill the process
+export const maxDuration = 60; // Allow 60 seconds (Hobby tier limit) for AI processing before Vercel kills the process
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { verifyToken } from '@clerk/backend';
