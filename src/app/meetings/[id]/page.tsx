@@ -129,48 +129,64 @@ export default function MeetingDetails() {
 
       <div className="flex-1">
         <AnimatePresence mode="wait">
-          {activeTab === "summary" && summary && (
-            <motion.div key="summary" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-              <div className="glass-panel p-6 sm:p-8">
-                <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Sparkles className="w-5 h-5 text-indigo-500"/> Abstract</h2>
-                <p className="text-foreground/80 leading-relaxed text-lg">{summary.abstract}</p>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="glass-panel p-6 sm:p-8 bg-surface-hover/30">
-                  <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-indigo-500"><CheckCircle2 className="w-5 h-5" /> Key Points</h2>
-                  <ul className="space-y-3">
-                    {JSON.parse(summary.keyPoints || "[]").length === 0 ? <p className="text-sm text-foreground/50">No key points listed.</p> :
-                      JSON.parse(summary.keyPoints || "[]").map((kp: string, i: number) => (
-                      <li key={i} className="flex gap-3 items-start text-foreground/80 font-medium"><div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-2 shrink-0" /> {kp}</li>
-                    ))}
-                  </ul>
+          {activeTab === "summary" && (
+            summary ? (
+              <motion.div key="summary" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+                <div className="glass-panel p-6 sm:p-8">
+                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Sparkles className="w-5 h-5 text-indigo-500"/> Abstract</h2>
+                  <p className="text-foreground/80 leading-relaxed text-lg">{summary.abstract}</p>
                 </div>
                 
-                <div className="space-y-6 flex flex-col">
-                  {JSON.parse(summary.risks || "[]").length > 0 && (
-                    <div className="glass-panel p-6 flex-1 bg-red-500/5 border-red-500/20">
-                      <h2 className="text-lg font-bold mb-3 text-red-500">Risks & Problems</h2>
-                      <ul className="space-y-2">
-                        {JSON.parse(summary.risks || "[]").map((r: string, i: number) => (
-                          <li key={i} className="flex gap-2 items-start text-sm text-foreground/80"><div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 shrink-0" /> {r}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {JSON.parse(summary.blockers || "[]").length > 0 && (
-                     <div className="glass-panel p-6 flex-1 bg-orange-500/5 border-orange-500/20">
-                      <h2 className="text-lg font-bold mb-3 text-orange-500">Blockers</h2>
-                      <ul className="space-y-2">
-                        {JSON.parse(summary.blockers || "[]").map((b: string, i: number) => (
-                          <li key={i} className="flex gap-2 items-start text-sm text-foreground/80"><div className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 shrink-0" /> {b}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="glass-panel p-6 sm:p-8 bg-surface-hover/30">
+                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-indigo-500"><CheckCircle2 className="w-5 h-5" /> Key Points</h2>
+                    <ul className="space-y-3">
+                      {JSON.parse(summary.keyPoints || "[]").length === 0 ? <p className="text-sm text-foreground/50">No key points listed.</p> :
+                        JSON.parse(summary.keyPoints || "[]").map((kp: string, i: number) => (
+                        <li key={i} className="flex gap-3 items-start text-foreground/80 font-medium"><div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-2 shrink-0" /> {kp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  
+                  <div className="space-y-6 flex flex-col">
+                    {JSON.parse(summary.risks || "[]").length > 0 && (
+                      <div className="glass-panel p-6 flex-1 bg-red-500/5 border-red-500/20">
+                        <h2 className="text-lg font-bold mb-3 text-red-500">Risks & Problems</h2>
+                        <ul className="space-y-2">
+                          {JSON.parse(summary.risks || "[]").map((r: string, i: number) => (
+                            <li key={i} className="flex gap-2 items-start text-sm text-foreground/80"><div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 shrink-0" /> {r}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {JSON.parse(summary.blockers || "[]").length > 0 && (
+                       <div className="glass-panel p-6 flex-1 bg-orange-500/5 border-orange-500/20">
+                        <h2 className="text-lg font-bold mb-3 text-orange-500">Blockers</h2>
+                        <ul className="space-y-2">
+                          {JSON.parse(summary.blockers || "[]").map((b: string, i: number) => (
+                            <li key={i} className="flex gap-2 items-start text-sm text-foreground/80"><div className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 shrink-0" /> {b}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
+            ) : (
+              <motion.div key="processing-summary" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="glass-panel p-16 flex flex-col items-center justify-center text-center mt-4">
+                {meeting.status === "PROCESSING" ? (
+                  <>
+                    <Loader2 className="w-12 h-12 animate-spin text-indigo-500 mb-6" />
+                    <h2 className="text-3xl font-extrabold tracking-tight mb-3 text-gradient inline-block">Extracting Intelligence...</h2>
+                    <p className="text-foreground/60 max-w-lg mx-auto text-lg leading-relaxed mt-2">
+                      Our engines are currently analyzing the meeting audio to generate intelligent summaries, detect code-switched languages, and extract action items. This usually takes a few minutes.
+                    </p>
+                  </>
+                ) : (
+                  <div className="text-foreground/60 font-medium text-lg">No meeting summary could be generated.</div>
+                )}
+              </motion.div>
+            )
           )}
 
           {activeTab === "actions" && (
