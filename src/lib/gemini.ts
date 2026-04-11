@@ -90,7 +90,7 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
     let userParts: any[] = [];
 
     if (stats.size < TWENTY_MB) {
-      console.log(\`[PolyNotes Gemini] File is \${stats.size} bytes (<20MB). Using direct inlineData to guarantee ultra-fast processing and avoid WebM hanging!\`);
+      console.log(`[PolyNotes Gemini] File is ${stats.size} bytes (<20MB). Using direct inlineData to guarantee ultra-fast processing and avoid WebM hanging!`);
       const buffer = fs.readFileSync(filePath);
       userParts = [
         { inlineData: { mimeType: mimeType, data: buffer.toString('base64') } },
@@ -106,17 +106,17 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
         config: { mimeType: mimeType }
       });
       
-      console.log(\`[PolyNotes Gemini] Upload complete in \${Date.now() - uploadStart}ms. File URI: \${uploadResult.uri}, state: \${uploadResult.state}\`);
+      console.log(`[PolyNotes Gemini] Upload complete in ${Date.now() - uploadStart}ms. File URI: ${uploadResult.uri}, state: ${uploadResult.state}`);
 
       // Step 2: Wait for Gemini to process the uploaded file with a rigid timeout
       let fileState = uploadResult.state;
       let pollCount = 0;
       while (fileState === 'PROCESSING') {
         pollCount++;
-        if (pollCount > 30) { // 30 * 3s = 90s Hard Timeout
-          throw new Error("Gemini rejected and hung on processing the webm audio stream (exceeded 90 seconds timeout). The file is unparsable.");
+        if (pollCount > 15) { // 15 * 3s = 45s Hard Timeout
+          throw new Error("Gemini rejected and hung on processing the webm audio stream (exceeded 45 seconds timeout limit). The file is unparsable.");
         }
-        console.log(\`[PolyNotes Gemini] Step 2: File still processing... (poll #\${pollCount})\`);
+        console.log(`[PolyNotes Gemini] Step 2: File still processing... (poll #${pollCount})`);
         await new Promise((resolve) => setTimeout(resolve, 3000));
         const fileStatusRef = await ai.files.get({ name: String(uploadResult.name) });
         fileState = fileStatusRef.state;
@@ -124,8 +124,8 @@ export async function* streamMeetingWithGemini(filePath: string, mimeType: strin
       }
       
       if (fileState === 'FAILED') {
-        const errorMsg = \`Gemini rejected the audio file (state=FAILED). File: \${uploadResult.name}\`;
-        console.error(\`[PolyNotes Gemini] \${errorMsg}\`);
+        const errorMsg = `Gemini rejected the audio file (state=FAILED). File: ${uploadResult.name}`;
+        console.error(`[PolyNotes Gemini] ${errorMsg}`);
         throw new Error(errorMsg);
       }
 
