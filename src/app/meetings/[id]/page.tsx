@@ -38,7 +38,7 @@ export default function MeetingDetails() {
   const router = useRouter();
   const id = params.id as string;
   
-  const [meeting, setMeeting] = useState<{ id: string; title: string; status: string; createdAt: string; audioUrl?: string } | null>(null);
+  const [meeting, setMeeting] = useState<{ id: string; title: string; status: string; createdAt: string; audioUrl?: string; error?: string | null } | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -114,6 +114,18 @@ export default function MeetingDetails() {
           </button>
         </div>
       </div>
+
+      {meeting.status === "FAILED" && (
+        <div className="mb-8 p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-500 text-sm font-medium">
+          Processing failed{meeting.error ? `: ${meeting.error}` : "."} The audio above is safe and playable — try recording again, or contact support if this keeps happening.
+        </div>
+      )}
+
+      {meeting.status === "PROCESSING" && (
+        <div className="mb-8 p-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-indigo-500 text-sm font-medium flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" /> Still transcribing this meeting — refresh in a bit.
+        </div>
+      )}
 
       <div className="flex gap-2 sm:gap-6 mb-8 border-b border-border pb-1 overflow-x-auto no-scrollbar">
         {["summary", "actions", "transcript"].map(tab => (
