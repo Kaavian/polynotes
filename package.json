@@ -16,6 +16,7 @@
     "@vercel/blob": "^0.27.3",
     "clsx": "^2.1.1",
     "framer-motion": "^12.38.0",
+    "sarvamai": "^1.1.10",
     "lucide-react": "^1.7.0",
     "next": "14.2.35",
     "next-themes": "^0.4.6",

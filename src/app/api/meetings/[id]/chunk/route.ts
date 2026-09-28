@@ -1,15 +1,13 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { transcribeChunkWithGemini } from '@/lib/gemini';
+import { transcribeChunkWithSarvam } from '@/lib/sarvam';
 import { prisma } from '@/lib/prisma';
 
 export const maxDuration = 60;
 
-// Transcribes ONE short (~60-90s) slice of a meeting's audio, uploaded by the
-// client in sequence after the full recording has already been saved via
-// /api/meetings/upload. Keeping each call this small is what keeps every
-// request comfortably inside Vercel's function timeout regardless of how
-// long the overall meeting ran.
+// Transcribes ONE short (<=25s, to stay under Sarvam's 30s synchronous REST
+// cap) slice of a meeting's audio, uploaded by the client in sequence after
+// the full recording has already been saved via /api/meetings/upload.
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     const { userId } = await auth();
@@ -27,15 +25,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     const formData = await request.formData();
     const audioChunk = formData.get('audio') as File | null;
-    const mimeType = (formData.get('mimeType') as string) || 'audio/wav';
     const startOffset = parseFloat((formData.get('startOffset') as string) || "0");
+    const durationSeconds = parseFloat((formData.get('durationSeconds') as string) || "0");
 
     if (!audioChunk) {
       return NextResponse.json({ error: "No audio provided for this chunk" }, { status: 400 });
     }
 
     const buffer = Buffer.from(await audioChunk.arrayBuffer());
-    const segments = await transcribeChunkWithGemini(buffer, mimeType);
+    const segments = await transcribeChunkWithSarvam(buffer, durationSeconds);
 
     for (const s of segments) {
       await prisma.transcriptSegment.create({

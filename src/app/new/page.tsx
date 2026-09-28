@@ -6,7 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { sliceAudioBufferToWavChunks } from "@/lib/wav-encoder";
 
-const CHUNK_SECONDS = 90;
+// Sarvam's synchronous speech-to-text REST endpoint caps audio at 30s per call;
+// keep chunks safely under that.
+const CHUNK_SECONDS = 25;
 
 function NewMeetingContent() {
   const searchParams = useSearchParams();
@@ -163,8 +165,8 @@ function NewMeetingContent() {
 
         const chunkForm = new FormData();
         chunkForm.append("audio", chunks[i].blob, `chunk-${i}.wav`);
-        chunkForm.append("mimeType", "audio/wav");
         chunkForm.append("startOffset", chunks[i].startOffset.toString());
+        chunkForm.append("durationSeconds", chunks[i].durationSeconds.toString());
 
         const chunkRes = await fetch(`/api/meetings/${meetingId}/chunk`, { method: "POST", body: chunkForm });
         if (!chunkRes.ok) {

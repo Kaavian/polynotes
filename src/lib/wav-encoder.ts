@@ -47,7 +47,7 @@ function writeString(view: DataView, offset: number, str: string) {
 export function sliceAudioBufferToWavChunks(
   audioBuffer: AudioBuffer,
   chunkSeconds: number
-): { blob: Blob; startOffset: number }[] {
+): { blob: Blob; startOffset: number; durationSeconds: number }[] {
   const sampleRate = audioBuffer.sampleRate;
   const channelCount = audioBuffer.numberOfChannels;
   const totalSamples = audioBuffer.length;
@@ -61,7 +61,7 @@ export function sliceAudioBufferToWavChunks(
   }
 
   const samplesPerChunk = Math.floor(chunkSeconds * sampleRate);
-  const chunks: { blob: Blob; startOffset: number }[] = [];
+  const chunks: { blob: Blob; startOffset: number; durationSeconds: number }[] = [];
 
   for (let start = 0; start < totalSamples; start += samplesPerChunk) {
     const end = Math.min(start + samplesPerChunk, totalSamples);
@@ -69,6 +69,7 @@ export function sliceAudioBufferToWavChunks(
     chunks.push({
       blob: encodeWavMono(slice, sampleRate),
       startOffset: start / sampleRate,
+      durationSeconds: slice.length / sampleRate,
     });
   }
 
