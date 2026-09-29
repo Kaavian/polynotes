@@ -12,6 +12,7 @@ model Meeting {
   title     String
   status    String   @default("RECORDING") // RECORDING, PROCESSING, COMPLETED, FAILED
   audioUrl  String?
+  error     String?  // populated when status is FAILED, shown to the user instead of silently falling back to mock content
   createdAt DateTime @default(now())
   userId    String?  // Secures the row bounds explicitly to Clerk Authentication Tokens 
 

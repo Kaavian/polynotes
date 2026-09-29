@@ -1,9 +1,25 @@
 "use client";
 
 import { useState, useRef, useEffect, Suspense } from "react";
-import { Mic, Square, UploadCloud, FileAudio, ArrowRight, Sparkles, CheckCircle2 } from "lucide-react";
+import { Mic, Square, UploadCloud, FileAudio, ArrowRight, Sparkles, CheckCircle2, Users, AlertTriangle, LogIn } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { SignInButton } from "@clerk/nextjs";
+import { sliceAudioBufferToWavChunks } from "@/lib/wav-encoder";
+
+// Sarvam's synchronous speech-to-text REST endpoint caps audio at 30s per call;
+// keep chunks safely under that.
+const CHUNK_SECONDS = 25;
+
+// Carries the HTTP status alongside the message so the UI can tell an
+// expired/missing session (401) apart from every other kind of failure.
+class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 function NewMeetingContent() {
   const searchParams = useSearchParams();
@@ -15,20 +31,22 @@ function NewMeetingContent() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [includeTabAudio, setIncludeTabAudio] = useState(true);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const timerInterval = useRef<NodeJS.Timeout | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const displayStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   // Upload state
   const [file, setFile] = useState<File | null>(null);
-  
+
   // Processing
   const [title, setTitle] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressState, setProgressState] = useState({ percent: 0, text: "" });
-  
-  type ParseableSegment = { speakerLabel: string; startTime: number; endTime: number; originalText: string; detectedLanguage: string; translatedTextEn: string | null; codeSwitchFlag: boolean; };
-  const [liveSegments, setLiveSegments] = useState<ParseableSegment[]>([]);
-  const segmentContainerRef = useRef<HTMLDivElement>(null);
+  const [segmentsSoFar, setSegmentsSoFar] = useState(0);
+  const [submitError, setSubmitError] = useState<{ message: string; isAuthError: boolean } | null>(null);
 
   // Timer effect
   useEffect(() => {
@@ -44,24 +62,49 @@ function NewMeetingContent() {
     };
   }, [isRecording]);
 
-  useEffect(() => {
-    if (segmentContainerRef.current) {
-      segmentContainerRef.current.scrollTop = segmentContainerRef.current.scrollHeight;
-    }
-  }, [liveSegments]);
-
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = micStream;
+
+      const audioContext = new AudioContext();
+      audioContextRef.current = audioContext;
+      const destination = audioContext.createMediaStreamDestination();
+      audioContext.createMediaStreamSource(micStream).connect(destination);
+
+      if (includeTabAudio) {
+        try {
+          // Captures the meeting call's own audio output (everyone else on the
+          // call), separate from the mic, which only picks up your own voice.
+          const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+          const displayAudioTracks = displayStream.getAudioTracks();
+          displayStream.getVideoTracks().forEach(track => track.stop());
+
+          if (displayAudioTracks.length > 0) {
+            displayStreamRef.current = displayStream;
+            const audioOnlyStream = new MediaStream(displayAudioTracks);
+            audioContext.createMediaStreamSource(audioOnlyStream).connect(destination);
+          } else {
+            alert('The shared tab didn\'t include audio, so only your microphone will be recorded. Tick "Share tab audio" in the browser\'s share dialog next time to capture other participants too.');
+          }
+        } catch (err) {
+          console.warn("Tab audio capture skipped:", err);
+        }
+      }
+
+      const recorder = new MediaRecorder(destination.stream);
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           setAudioChunks((prev) => [...prev, e.data]);
         }
       };
       recorder.onstop = () => {
-        const tracks = stream.getTracks();
-        tracks.forEach(track => track.stop());
+        micStreamRef.current?.getTracks().forEach(track => track.stop());
+        displayStreamRef.current?.getTracks().forEach(track => track.stop());
+        audioContextRef.current?.close();
+        micStreamRef.current = null;
+        displayStreamRef.current = null;
+        audioContextRef.current = null;
       };
       mediaRecorder.current = recorder;
       recorder.start();
@@ -88,7 +131,7 @@ function NewMeetingContent() {
 
   const handleSubmit = async () => {
     let finalBlob: Blob | null = null;
-    
+
     if (mode === "upload" && file) {
       finalBlob = file;
     } else if (mode === "record" && audioChunks.length > 0) {
@@ -98,74 +141,74 @@ function NewMeetingContent() {
     if (!finalBlob) return;
 
     setIsProcessing(true);
-    setProgressState({ percent: 15, text: "Uploading secure audio to File Database..." });
-    setLiveSegments([]);
-
-    const formData = new FormData();
-    formData.append("audio", finalBlob, (mode === "upload" && file) ? file.name : "recording.webm");
-    formData.append("title", title || "Untitled Meeting");
-    formData.append("mimeType", finalBlob.type || "audio/webm");
+    setSubmitError(null);
+    setSegmentsSoFar(0);
+    setProgressState({ percent: 5, text: "Saving your audio..." });
 
     try {
-      const res = await fetch("/api/meetings/process", {
-        method: "POST",
-        body: formData
-      });
-      
-      if (!res.body) throw new Error("No readable stream available.");
+      // Step 1: store the full recording immediately, independent of
+      // transcription, so the audio is never lost even if the pipeline below fails.
+      const uploadForm = new FormData();
+      uploadForm.append("audio", finalBlob, (mode === "upload" && file) ? file.name : "recording.webm");
+      uploadForm.append("title", title || "Untitled Meeting");
 
-      setProgressState({ percent: 30, text: "Analyzing meeting acoustics..." });
+      const uploadRes = await fetch("/api/meetings/upload", { method: "POST", body: uploadForm });
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({}));
+        throw new ApiError(err.error || `Failed to save the audio recording (server responded ${uploadRes.status}).`, uploadRes.status);
+      }
+      const { meetingId } = await uploadRes.json();
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = "";
-      let meetingId = "";
-      let lastSegmentsLength = 0;
+      setProgressState({ percent: 20, text: "Audio saved. Preparing transcription..." });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        
-        if (value) {
-          accumulated += decoder.decode(value, { stream: true });
+      // Step 2: decode locally and slice into short, independently-transcribable
+      // chunks so no single request risks a server timeout regardless of meeting length.
+      const arrayBuffer = await finalBlob.arrayBuffer();
+      const decodeContext = new AudioContext();
+      const decoded = await decodeContext.decodeAudioData(arrayBuffer);
+      const chunks = sliceAudioBufferToWavChunks(decoded, CHUNK_SECONDS);
+      await decodeContext.close();
 
-          const idMatch = accumulated.match(/__MEETING_ID__:([a-zA-Z0-9-]+)/);
-          if (idMatch && !meetingId) {
-             meetingId = idMatch[1];
-          }
+      // Step 3: transcribe each chunk in order so timestamps stay correct.
+      for (let i = 0; i < chunks.length; i++) {
+        setProgressState({
+          percent: 20 + Math.round((i / chunks.length) * 65),
+          text: `Transcribing part ${i + 1} of ${chunks.length}...`,
+        });
 
-          // Safely extract fully-formed JSON segment strings exactly as they close
-          const segmentMatches = accumulated.match(/\{\s*"speakerLabel"[\s\S]*?\}/g);
-          if (segmentMatches) {
-             const parsedSegments = segmentMatches.map(m => {
-                try { return JSON.parse(m); } catch { return null; }
-             }).filter(Boolean);
-             
-             if (parsedSegments.length > lastSegmentsLength) {
-                setLiveSegments(parsedSegments as ParseableSegment[]);
-                lastSegmentsLength = parsedSegments.length;
-                setProgressState({ percent: Math.min(85, 30 + (parsedSegments.length * 3)), text: "Transcribing and translating live stream..." });
-             }
-          }
+        const chunkForm = new FormData();
+        chunkForm.append("audio", chunks[i].blob, `chunk-${i}.wav`);
+        chunkForm.append("startOffset", chunks[i].startOffset.toString());
+        chunkForm.append("durationSeconds", chunks[i].durationSeconds.toString());
 
-          if (accumulated.includes("[DONE]")) {
-             break;
-          }
+        const chunkRes = await fetch(`/api/meetings/${meetingId}/chunk`, { method: "POST", body: chunkForm });
+        if (!chunkRes.ok) {
+          const err = await chunkRes.json().catch(() => ({}));
+          throw new ApiError(err.error || `Transcription failed on part ${i + 1} of ${chunks.length} (server responded ${chunkRes.status}).`, chunkRes.status);
         }
-        if (done) break;
+        const { segmentCount } = await chunkRes.json();
+        setSegmentsSoFar((prev) => prev + (segmentCount || 0));
       }
 
-      setProgressState({ percent: 100, text: "Saving finished intelligence securely..." });
+      setProgressState({ percent: 90, text: "Generating summary and action items..." });
 
-      if (meetingId) {
-        setTimeout(() => {
-          router.push(`/meetings/${meetingId}`);
-        }, 1200);
+      const finalizeRes = await fetch(`/api/meetings/${meetingId}/finalize`, { method: "POST" });
+      if (!finalizeRes.ok) {
+        // The audio and transcript are already saved; let the meeting page
+        // surface the failure reason instead of trapping the user here.
+        console.error("Finalize failed:", await finalizeRes.text());
       }
+
+      setProgressState({ percent: 100, text: "Done!" });
+      router.push(`/meetings/${meetingId}`);
     } catch (e) {
       console.error("Processing failed:", e);
       setIsProcessing(false);
       setProgressState({ percent: 0, text: "" });
-      alert("Something went wrong while processing the audio.");
+      setSubmitError({
+        message: e instanceof Error ? e.message : "Something went wrong while processing the audio.",
+        isAuthError: e instanceof ApiError && e.status === 401,
+      });
     }
   };
 
@@ -176,6 +219,51 @@ function NewMeetingContent() {
   };
 
   const canSubmit = (mode === "upload" && file) || (mode === "record" && audioChunks.length > 0 && !isRecording);
+
+  if (submitError) {
+    return (
+      <div className="flex-1 w-full max-w-2xl mx-auto px-4 flex flex-col items-center justify-center min-h-[70vh]">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="glass-panel p-8 sm:p-10 w-full rounded-2xl flex flex-col items-center text-center gap-4"
+        >
+          <div className="w-16 h-16 bg-red-500/10 border border-red-500/30 text-red-500 rounded-full flex items-center justify-center">
+            <AlertTriangle className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold">
+            {submitError.isAuthError ? "You've been signed out" : "Processing failed"}
+          </h2>
+          <p className="text-sm text-foreground/60 max-w-md">
+            {submitError.isAuthError
+              ? "Your session expired or you weren't signed in. Sign in and try again — your recording is still here, nothing was lost."
+              : submitError.message}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 mt-2 w-full sm:w-auto">
+            {submitError.isAuthError ? (
+              <SignInButton mode="modal">
+                <button className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-full font-medium transition-all">
+                  <LogIn className="w-4 h-4" /> Sign In
+                </button>
+              </SignInButton>
+            ) : null}
+            <button
+              onClick={handleSubmit}
+              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-full font-medium transition-all"
+            >
+              <Sparkles className="w-4 h-4" /> Try Again
+            </button>
+            <button
+              onClick={() => { setSubmitError(null); setAudioChunks([]); setFile(null); setRecordingTime(0); }}
+              className="flex items-center justify-center gap-2 bg-surface hover:bg-surface-hover border border-border px-6 py-2.5 rounded-full font-medium transition-all"
+            >
+              Start Over
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   if (isProcessing) {
     return (
@@ -224,10 +312,10 @@ function NewMeetingContent() {
             <p className="text-sm text-foreground/60 max-w-md">
               Please keep this screen open while the underlying models seamlessly stream, parse, and commit all localized languages and decisions straight into the database.
             </p>
-            {liveSegments.length > 0 && (
+            {segmentsSoFar > 0 && (
               <div className="mt-4 px-4 py-1.5 bg-indigo-500/10 text-indigo-400 rounded-full text-xs font-bold uppercase tracking-widest flex items-center gap-2 border border-indigo-500/20">
                  <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                 {liveSegments.length} Segments Parsed
+                 {segmentsSoFar} Segments Transcribed
               </div>
             )}
           </div>
@@ -280,12 +368,28 @@ function NewMeetingContent() {
               className="flex flex-col items-center justify-center py-6 min-h-[200px]"
             >
               {!isRecording && audioChunks.length === 0 ? (
-                <button 
-                  onClick={startRecording}
-                  className="w-24 h-24 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 border-2 border-indigo-500/50 border-dashed rounded-full flex flex-col items-center justify-center gap-2 transition-all hover:scale-105"
-                >
-                  <Mic className="w-8 h-8" />
-                </button>
+                <>
+                  <label className="flex items-center gap-2 mb-6 text-sm font-medium text-foreground/70 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeTabAudio}
+                      onChange={(e) => setIncludeTabAudio(e.target.checked)}
+                      className="w-4 h-4 accent-indigo-500"
+                    />
+                    <Users className="w-4 h-4" /> Also capture other participants (share the meeting tab)
+                  </label>
+                  <button
+                    onClick={startRecording}
+                    className="w-24 h-24 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 border-2 border-indigo-500/50 border-dashed rounded-full flex flex-col items-center justify-center gap-2 transition-all hover:scale-105"
+                  >
+                    <Mic className="w-8 h-8" />
+                  </button>
+                  {includeTabAudio && (
+                    <p className="mt-4 text-xs text-foreground/50 max-w-xs text-center">
+                      You&apos;ll be asked to pick a tab/screen and tick &quot;Share tab audio&quot; — that captures everyone else on the call, in addition to your own mic.
+                    </p>
+                  )}
+                </>
               ) : isRecording ? (
                 <div className="flex flex-col items-center gap-6">
                   <div className="relative">

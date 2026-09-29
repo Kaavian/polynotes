@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
@@ -34,7 +32,8 @@ export async function GET(request: Request, { params }: { params: { id: string }
         title: meetingData.title,
         status: meetingData.status,
         createdAt: meetingData.createdAt,
-        audioUrl: meetingData.audioUrl
+        audioUrl: meetingData.audioUrl,
+        error: meeting.error
       },
       segments: meetingData.segments,
       actions: meetingData.actions,
