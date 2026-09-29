@@ -1,14 +1,25 @@
 "use client";
 
 import { useState, useRef, useEffect, Suspense } from "react";
-import { Mic, Square, UploadCloud, FileAudio, ArrowRight, Sparkles, CheckCircle2, Users } from "lucide-react";
+import { Mic, Square, UploadCloud, FileAudio, ArrowRight, Sparkles, CheckCircle2, Users, AlertTriangle, LogIn } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { SignInButton } from "@clerk/nextjs";
 import { sliceAudioBufferToWavChunks } from "@/lib/wav-encoder";
 
 // Sarvam's synchronous speech-to-text REST endpoint caps audio at 30s per call;
 // keep chunks safely under that.
 const CHUNK_SECONDS = 25;
+
+// Carries the HTTP status alongside the message so the UI can tell an
+// expired/missing session (401) apart from every other kind of failure.
+class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 function NewMeetingContent() {
   const searchParams = useSearchParams();
@@ -35,6 +46,7 @@ function NewMeetingContent() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressState, setProgressState] = useState({ percent: 0, text: "" });
   const [segmentsSoFar, setSegmentsSoFar] = useState(0);
+  const [submitError, setSubmitError] = useState<{ message: string; isAuthError: boolean } | null>(null);
 
   // Timer effect
   useEffect(() => {
@@ -129,6 +141,7 @@ function NewMeetingContent() {
     if (!finalBlob) return;
 
     setIsProcessing(true);
+    setSubmitError(null);
     setSegmentsSoFar(0);
     setProgressState({ percent: 5, text: "Saving your audio..." });
 
@@ -142,7 +155,7 @@ function NewMeetingContent() {
       const uploadRes = await fetch("/api/meetings/upload", { method: "POST", body: uploadForm });
       if (!uploadRes.ok) {
         const err = await uploadRes.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to save the audio recording.");
+        throw new ApiError(err.error || `Failed to save the audio recording (server responded ${uploadRes.status}).`, uploadRes.status);
       }
       const { meetingId } = await uploadRes.json();
 
@@ -171,7 +184,7 @@ function NewMeetingContent() {
         const chunkRes = await fetch(`/api/meetings/${meetingId}/chunk`, { method: "POST", body: chunkForm });
         if (!chunkRes.ok) {
           const err = await chunkRes.json().catch(() => ({}));
-          throw new Error(err.error || `Transcription failed on part ${i + 1} of ${chunks.length}.`);
+          throw new ApiError(err.error || `Transcription failed on part ${i + 1} of ${chunks.length} (server responded ${chunkRes.status}).`, chunkRes.status);
         }
         const { segmentCount } = await chunkRes.json();
         setSegmentsSoFar((prev) => prev + (segmentCount || 0));
@@ -192,7 +205,10 @@ function NewMeetingContent() {
       console.error("Processing failed:", e);
       setIsProcessing(false);
       setProgressState({ percent: 0, text: "" });
-      alert(e instanceof Error ? e.message : "Something went wrong while processing the audio.");
+      setSubmitError({
+        message: e instanceof Error ? e.message : "Something went wrong while processing the audio.",
+        isAuthError: e instanceof ApiError && e.status === 401,
+      });
     }
   };
 
@@ -203,6 +219,51 @@ function NewMeetingContent() {
   };
 
   const canSubmit = (mode === "upload" && file) || (mode === "record" && audioChunks.length > 0 && !isRecording);
+
+  if (submitError) {
+    return (
+      <div className="flex-1 w-full max-w-2xl mx-auto px-4 flex flex-col items-center justify-center min-h-[70vh]">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="glass-panel p-8 sm:p-10 w-full rounded-2xl flex flex-col items-center text-center gap-4"
+        >
+          <div className="w-16 h-16 bg-red-500/10 border border-red-500/30 text-red-500 rounded-full flex items-center justify-center">
+            <AlertTriangle className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold">
+            {submitError.isAuthError ? "You've been signed out" : "Processing failed"}
+          </h2>
+          <p className="text-sm text-foreground/60 max-w-md">
+            {submitError.isAuthError
+              ? "Your session expired or you weren't signed in. Sign in and try again — your recording is still here, nothing was lost."
+              : submitError.message}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 mt-2 w-full sm:w-auto">
+            {submitError.isAuthError ? (
+              <SignInButton mode="modal">
+                <button className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-full font-medium transition-all">
+                  <LogIn className="w-4 h-4" /> Sign In
+                </button>
+              </SignInButton>
+            ) : null}
+            <button
+              onClick={handleSubmit}
+              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-full font-medium transition-all"
+            >
+              <Sparkles className="w-4 h-4" /> Try Again
+            </button>
+            <button
+              onClick={() => { setSubmitError(null); setAudioChunks([]); setFile(null); setRecordingTime(0); }}
+              className="flex items-center justify-center gap-2 bg-surface hover:bg-surface-hover border border-border px-6 py-2.5 rounded-full font-medium transition-all"
+            >
+              Start Over
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   if (isProcessing) {
     return (
